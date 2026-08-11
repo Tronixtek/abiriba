@@ -1,0 +1,23 @@
+node_modules/
+functions/lib/
+firebase-debug.log
+firebase-debug.*.log
+ui-debug.log
+.firebase/
+*.local
+
+# secrets
+.env
+.env.*
+!.env.example
+
+# build output
+dist/
+backend/dist/
+frontend/dist/
+
+# generated Prisma client (run `npm run prisma:generate` after cloning)
+backend/src/generated/
+
+# OS
+.DS_Store
