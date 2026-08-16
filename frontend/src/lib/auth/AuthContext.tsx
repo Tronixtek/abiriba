@@ -8,6 +8,7 @@ interface AuthUser {
   email: string;
   role: Role;
   tenantId: string;
+  tenantSlug: string;
 }
 
 interface AuthState {
@@ -22,10 +23,12 @@ interface AuthResponse {
 
 interface AuthContextValue extends AuthState {
   tenantId: string | null;
+  tenantSlug: string | null;
   role: Role | null;
   signIn: (email: string, password: string) => Promise<void>;
   signUpBusiness: (params: {
     email: string;
+    phone: string;
     password: string;
     businessName: string;
     ownerName: string;
@@ -61,6 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function signUpBusiness(params: {
     email: string;
+    phone: string;
     password: string;
     businessName: string;
     ownerName: string;
@@ -81,6 +85,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         ...state,
         tenantId: state.user?.tenantId ?? null,
+        tenantSlug: state.user?.tenantSlug ?? null,
         role: state.user?.role ?? null,
         signIn,
         signUpBusiness,

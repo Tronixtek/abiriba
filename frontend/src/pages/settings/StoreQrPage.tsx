@@ -7,9 +7,9 @@ import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 
 export function StoreQrPage() {
-  const { tenantId } = useAuth();
+  const { tenantSlug } = useAuth();
   const svgWrapperRef = useRef<HTMLDivElement>(null);
-  const storeUrl = `${window.location.origin}/store/${tenantId}`;
+  const storeUrl = `${window.location.origin}/store/${tenantSlug}`;
 
   function downloadSvg() {
     const svg = svgWrapperRef.current?.querySelector("svg");

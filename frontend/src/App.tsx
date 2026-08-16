@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Outlet } from "react-router-dom";
 import { AuthProvider } from "@/lib/auth/AuthContext";
 import { RequireAuth, RequireRole } from "@/lib/auth/RequireRole";
 import { AppShell } from "@/components/layout/AppShell";
@@ -13,10 +13,20 @@ import { AuditLogPage } from "@/pages/audit/AuditLogPage";
 import { ReportsPage } from "@/pages/reports/ReportsPage";
 import { StaffPage } from "@/pages/staff/StaffPage";
 import { StoreQrPage } from "@/pages/settings/StoreQrPage";
+import { MarketplacePage as MarketplaceSettingsPage } from "@/pages/settings/MarketplacePage";
+import { AiChatPage } from "@/pages/ai/AiChatPage";
 import { StorefrontPage } from "@/pages/storefront/StorefrontPage";
+import { MarketplacePage } from "@/pages/marketplace/MarketplacePage";
 import { LandingPage } from "@/pages/marketing/LandingPage";
 import { TermsPage } from "@/pages/marketing/TermsPage";
 import { PrivacyPage } from "@/pages/marketing/PrivacyPage";
+import { AdminAuthProvider } from "@/lib/admin/AdminAuthContext";
+import { RequireAdminAuth } from "@/lib/admin/RequireAdminAuth";
+import { AdminShell } from "@/components/admin/AdminShell";
+import { AdminLoginPage } from "@/pages/admin/AdminLoginPage";
+import { AdminOverviewPage } from "@/pages/admin/AdminOverviewPage";
+import { AdminTenantsPage } from "@/pages/admin/AdminTenantsPage";
+import { AdminTenantDetailPage } from "@/pages/admin/AdminTenantDetailPage";
 
 function App() {
   return (
@@ -28,7 +38,8 @@ function App() {
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<SignupPage />} />
-          <Route path="/store/:tenantId" element={<StorefrontPage />} />
+          <Route path="/store/:slug" element={<StorefrontPage />} />
+          <Route path="/marketplace" element={<MarketplacePage />} />
 
           <Route
             path="/app"
@@ -49,6 +60,14 @@ function App() {
               }
             />
             <Route path="customers" element={<CustomersPage />} />
+            <Route
+              path="ai-assistant"
+              element={
+                <RequireRole roles={["OWNER", "MANAGER"]}>
+                  <AiChatPage />
+                </RequireRole>
+              }
+            />
             <Route path="orders" element={<OrdersPage />} />
             <Route
               path="audit-log"
@@ -82,6 +101,29 @@ function App() {
                 </RequireRole>
               }
             />
+            <Route
+              path="marketplace-settings"
+              element={
+                <RequireRole roles={["OWNER", "MANAGER"]}>
+                  <MarketplaceSettingsPage />
+                </RequireRole>
+              }
+            />
+          </Route>
+
+          <Route path="/admin" element={<AdminAuthProvider><Outlet /></AdminAuthProvider>}>
+            <Route index element={<AdminLoginPage />} />
+            <Route
+              element={
+                <RequireAdminAuth>
+                  <AdminShell />
+                </RequireAdminAuth>
+              }
+            >
+              <Route path="dashboard" element={<AdminOverviewPage />} />
+              <Route path="businesses" element={<AdminTenantsPage />} />
+              <Route path="businesses/:tenantId" element={<AdminTenantDetailPage />} />
+            </Route>
           </Route>
         </Routes>
       </BrowserRouter>

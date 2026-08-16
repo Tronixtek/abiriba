@@ -7,3 +7,4 @@ export const reportsRouter = Router();
 
 reportsRouter.use(authenticate, authorize("OWNER", "MANAGER"));
 reportsRouter.get("/sales", reportsController.getSales);
+reportsRouter.get("/sales/trends", reportsController.getSalesTrends);

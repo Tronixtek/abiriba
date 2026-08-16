@@ -13,5 +13,19 @@ const createOrderLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-publicRouter.get("/:tenantId/storefront", publicController.storefront);
-publicRouter.post("/:tenantId/orders", createOrderLimiter, publicController.createOrder);
+// Generous but bounded — read-only search, just throttles scraping.
+const marketplaceLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+publicRouter.get("/stats", publicController.platformStats);
+// Fixed literal paths must be registered before the "/:slug/..." routes
+// below, so Express doesn't try to match "marketplace" as a slug.
+publicRouter.get("/marketplace/cities", marketplaceLimiter, publicController.marketplaceCities);
+publicRouter.get("/marketplace/search", marketplaceLimiter, publicController.marketplaceSearch);
+publicRouter.get("/:slug/storefront", publicController.storefront);
+publicRouter.get("/:slug/orders/:orderId", publicController.getOrder);
+publicRouter.post("/:slug/orders", createOrderLimiter, publicController.createOrder);

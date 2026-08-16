@@ -6,10 +6,15 @@ export interface JwtClaims {
   role: Role;
 }
 
+export interface AdminJwtClaims {
+  adminId: string;
+}
+
 declare global {
   namespace Express {
     interface Request {
       user?: JwtClaims;
+      admin?: AdminJwtClaims;
     }
   }
 }

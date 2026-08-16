@@ -28,8 +28,9 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { ImageIcon } from "lucide-react";
 import { toast } from "sonner";
-import { ApiError } from "@/lib/apiClient";
+import { ApiError, resolveUploadUrl } from "@/lib/apiClient";
 
 function money(n: number) {
   return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -113,19 +114,31 @@ export function CheckoutPage() {
           onChange={(e) => setSearch(e.target.value)}
         />
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          {filteredProducts.map((p) => (
-            <button
-              key={p.id}
-              onClick={() => addToCart(p)}
-              disabled={p.quantity <= 0}
-              className="flex flex-col items-start rounded-md border p-3 text-left hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <span className="font-medium">{p.name}</span>
-              <span className="text-sm text-muted-foreground">
-                {money(Number(p.displayPrice))} · {p.quantity} in stock
-              </span>
-            </button>
-          ))}
+          {filteredProducts.map((p) => {
+            const imageUrl = resolveUploadUrl(p.images[0]?.url);
+            return (
+              <button
+                key={p.id}
+                onClick={() => addToCart(p)}
+                disabled={p.quantity <= 0}
+                className="flex flex-col items-start gap-2 rounded-md border p-3 text-left hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {imageUrl ? (
+                  <img src={imageUrl} alt={p.name} className="h-16 w-full rounded object-cover" />
+                ) : (
+                  <div className="flex h-16 w-full items-center justify-center rounded bg-muted text-muted-foreground">
+                    <ImageIcon className="size-5" />
+                  </div>
+                )}
+                <div>
+                  <span className="font-medium">{p.name}</span>
+                  <span className="block text-sm text-muted-foreground">
+                    {money(Number(p.displayPrice))} · {p.quantity} in stock
+                  </span>
+                </div>
+              </button>
+            );
+          })}
         </div>
       </div>
 

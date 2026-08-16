@@ -44,17 +44,68 @@ enum ReceiptStatus {
   FAILED
 }
 
+enum ChatRole {
+  USER
+  ASSISTANT
+}
+
+// Only ASSISTANT messages that parsed inventory changes carry a status other
+// than NONE — plain chat replies (greetings, clarifying questions) stay NONE.
+enum ProposalStatus {
+  NONE
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// Platform-operator identity — deliberately NOT related to Tenant. Every
+// other model/query in this schema is scoped by tenantId; AdminUser is the
+// one identity that can see across all tenants, so it's kept fully separate
+// (own table, own JWT secret) to make that boundary impossible to blur.
+model AdminUser {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
 model Tenant {
   id           String   @id @default(cuid())
   businessName String
+  slug         String   @unique // human-readable storefront URL segment, derived from businessName
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+
+  // Marketplace opt-in — a vendor only appears in cross-tenant public search
+  // once all of these are set. state/lga/city/street/streetNumber are the
+  // vendor's typed full address (display + a no-permission-needed search
+  // filter on city). latitude/longitude drive the actual distance ranking —
+  // set either directly from the vendor's device GPS (most accurate), or
+  // geocoded server-side from the typed address as a fallback when GPS
+  // isn't shared/available.
+  marketplaceEnabled Boolean   @default(false)
+  country            String?   @default("Nigeria")
+  state              String?
+  lga                String?
+  city               String?
+  street             String?
+  streetNumber       String?
+  locationUpdatedAt  DateTime?
+  latitude           Decimal?  @db.Decimal(9, 6)
+  longitude          Decimal?  @db.Decimal(9, 6)
 
   users            User[]
   products         Product[]
   customers        Customer[]
   orders           Order[]
   stockAdjustments StockAdjustment[]
+  aiChatMessages   AiChatMessage[]
+
+  @@index([marketplaceEnabled])
+  @@index([city])
 }
 
 model User {
@@ -62,6 +113,7 @@ model User {
   tenantId     String
   tenant       Tenant   @relation(fields: [tenantId], references: [id])
   email        String   @unique
+  phone        String?
   passwordHash String
   name         String
   role         Role
@@ -69,10 +121,12 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  ordersCreated    Order[]           @relation("OrderCreatedBy")
-  ordersVoided     Order[]           @relation("OrderVoidedBy")
-  payments         Payment[]
-  stockAdjustments StockAdjustment[]
+  ordersCreated       Order[]           @relation("OrderCreatedBy")
+  ordersVoided        Order[]           @relation("OrderVoidedBy")
+  payments            Payment[]
+  stockAdjustments    StockAdjustment[]
+  aiChatMessages      AiChatMessage[]
+  aiProposalsReviewed AiChatMessage[]   @relation("AiProposalReviewedBy")
 
   @@index([tenantId])
 }
@@ -94,10 +148,24 @@ model Product {
 
   orderItems       OrderItem[]
   stockAdjustments StockAdjustment[]
+  images           ProductImage[]
 
   @@unique([tenantId, sku])
   @@index([tenantId])
   @@index([tenantId, quantity])
+}
+
+model ProductImage {
+  id        String   @id @default(cuid())
+  tenantId  String
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  url       String
+  position  Int      @default(0) // display/swipe order — optional, capped at 3 per product at the app layer
+  createdAt DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([productId])
 }
 
 model Customer {
@@ -199,5 +267,29 @@ model StockAdjustment {
 
   @@index([tenantId])
   @@index([tenantId, productId])
+  @@index([tenantId, createdAt])
+}
+
+model AiChatMessage {
+  id       String   @id @default(cuid())
+  tenantId String
+  tenant   Tenant   @relation(fields: [tenantId], references: [id])
+  userId   String?
+  user     User?    @relation(fields: [userId], references: [id])
+  role     ChatRole
+  content  String
+  imageUrl String?
+
+  // Gemini's raw parsed items: [{ name, quantity, unitPrice?, matchedProductId? }].
+  // Set only on assistant messages that proposed inventory changes.
+  proposedActions Json?
+  status          ProposalStatus @default(NONE)
+  reviewedById    String?
+  reviewedBy      User?          @relation("AiProposalReviewedBy", fields: [reviewedById], references: [id])
+  reviewedAt      DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([tenantId])
   @@index([tenantId, createdAt])
 }

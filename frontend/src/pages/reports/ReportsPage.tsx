@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useSalesReport } from "@/hooks/useReports";
+import { useSalesReport, useSalesTrends } from "@/hooks/useReports";
 import type { SalesReport } from "@/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -11,6 +11,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { TrendChart } from "@/components/charts/TrendChart";
+
+const TREND_RANGE_OPTIONS = [
+  { value: "7", label: "7 days" },
+  { value: "30", label: "30 days" },
+  { value: "90", label: "90 days" },
+] as const;
 
 function money(n: number) {
   return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -49,6 +56,8 @@ function formatPeriod(report: SalesReport): string {
 export function ReportsPage() {
   const [range, setRange] = useState<"day" | "week" | "month">("day");
   const { data: report, isLoading } = useSalesReport(range);
+  const [trendRange, setTrendRange] = useState<"7" | "30" | "90">("30");
+  const { data: trends = [] } = useSalesTrends(Number(trendRange));
 
   return (
     <div className="flex flex-col gap-4">
@@ -127,6 +136,35 @@ export function ReportsPage() {
           </Card>
         </>
       )}
+
+      <div className="mt-4 flex items-center justify-between">
+        <h2 className="text-lg font-semibold">Trends</h2>
+        <Tabs value={trendRange} onValueChange={(v) => setTrendRange(v as typeof trendRange)}>
+          <TabsList>
+            {TREND_RANGE_OPTIONS.map((o) => (
+              <TabsTrigger key={o.value} value={o.value}>
+                {o.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <TrendChart
+          title="Revenue"
+          data={trends.map((t) => ({ date: t.date, value: t.revenue }))}
+          formatValue={money}
+        />
+        <TrendChart
+          title="Orders"
+          data={trends.map((t) => ({ date: t.date, value: t.transactions }))}
+        />
+        <TrendChart
+          title="Items sold"
+          data={trends.map((t) => ({ date: t.date, value: t.itemsSold }))}
+        />
+      </div>
     </div>
   );
 }

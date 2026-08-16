@@ -19,11 +19,13 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/app/products", label: "Products", roles: ["OWNER", "MANAGER", "STAFF"] },
   { to: "/app/low-stock", label: "Low Stock", roles: ["OWNER", "MANAGER"] },
   { to: "/app/customers", label: "Customers", roles: ["OWNER", "MANAGER", "STAFF"] },
+  { to: "/app/ai-assistant", label: "AI Assistant", roles: ["OWNER", "MANAGER"] },
   { to: "/app/orders", label: "Orders", roles: ["OWNER", "MANAGER", "STAFF"] },
   { to: "/app/audit-log", label: "Audit Log", roles: ["OWNER", "MANAGER"] },
   { to: "/app/reports", label: "Reports", roles: ["OWNER", "MANAGER"] },
   { to: "/app/staff", label: "Staff", roles: ["OWNER", "MANAGER"] },
   { to: "/app/store-qr", label: "Store QR", roles: ["OWNER", "MANAGER"] },
+  { to: "/app/marketplace-settings", label: "Marketplace", roles: ["OWNER", "MANAGER"] },
 ];
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {

@@ -66,6 +66,9 @@ export function LandingPage() {
           <Logo size="md" />
           <nav className="flex items-center gap-2">
             <Button asChild variant="ghost">
+              <Link to="/marketplace">Browse products near you</Link>
+            </Button>
+            <Button asChild variant="ghost">
               <Link to="/login">Login</Link>
             </Button>
             <Button asChild>
@@ -79,12 +82,15 @@ export function LandingPage() {
         {/* Hero */}
         <section className="mx-auto grid max-w-6xl gap-10 p-4 py-16 md:grid-cols-2 md:items-center md:py-24">
           <div className="flex flex-col gap-6">
+            <span className="w-fit rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
+              Join Over 1000 businesses growing with Abiriba
+            </span>
             <h1 className="text-4xl font-bold tracking-tight text-balance md:text-5xl">
               Sell, stock, and grow your shop.
             </h1>
             <p className="text-lg text-muted-foreground text-pretty">
               Abiriba is the point of sale, inventory, and QR ordering platform built for Nigerian
-              shops. Set your price — you keep every naira of it.
+              shops. You set the price. You keep 100% of it. No monthly fees, ever.
             </p>
             <div className="flex flex-wrap gap-3">
               <Button asChild size="lg" className="h-11 px-5 text-base">

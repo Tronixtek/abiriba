@@ -49,6 +49,27 @@ export function useUpdateProduct() {
   });
 }
 
+export function useUploadProductImage() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ productId, file }: { productId: string; file: File }) => {
+      const formData = new FormData();
+      formData.append("image", file);
+      return api.upload<Product>(`/products/${productId}/images`, formData);
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["products"] }),
+  });
+}
+
+export function useDeleteProductImage() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ productId, imageId }: { productId: string; imageId: string }) =>
+      api.delete<Product>(`/products/${productId}/images/${imageId}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["products"] }),
+  });
+}
+
 export function useAdjustStock() {
   const queryClient = useQueryClient();
   return useMutation({

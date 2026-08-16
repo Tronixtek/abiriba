@@ -9,10 +9,17 @@ const REFRESH_COOKIE = "refreshToken";
 const REFRESH_COOKIE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
 function refreshCookieOptions() {
+  const isProduction = env.NODE_ENV === "production";
   return {
     httpOnly: true,
-    secure: env.NODE_ENV === "production",
-    sameSite: "lax" as const,
+    secure: isProduction,
+    // Frontend (Firebase Hosting) and backend (this VPS) are on different
+    // registrable domains in production — a genuinely cross-site request,
+    // so the cookie needs SameSite=None (paired with Secure) to be sent at
+    // all. "lax" only works locally where both run on the same "localhost"
+    // site; browsers reject SameSite=None without Secure, so it can't be
+    // used over plain http in dev.
+    sameSite: (isProduction ? "none" : "lax") as "none" | "lax",
     path: "/auth",
     maxAge: REFRESH_COOKIE_MAX_AGE_MS,
   };
@@ -29,6 +36,7 @@ const signupSchema = z.object({
   businessName: z.string().trim().min(1),
   ownerName: z.string().trim().min(1),
   email: z.string().trim().email(),
+  phone: z.string().trim().min(7).max(20),
   password: z.string().min(6),
 });
 
@@ -38,7 +46,15 @@ export async function signup(req: Request, res: Response) {
   const accessToken = issueTokens(res, { userId: user.id, tenantId: tenant.id, role: user.role });
   res.status(201).json({
     accessToken,
-    user: { id: user.id, name: user.name, email: user.email, role: user.role, tenantId: tenant.id },
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      role: user.role,
+      tenantId: tenant.id,
+      tenantSlug: tenant.slug,
+    },
   });
 }
 
@@ -53,7 +69,14 @@ export async function login(req: Request, res: Response) {
   const accessToken = issueTokens(res, { userId: user.id, tenantId: user.tenantId, role: user.role });
   res.json({
     accessToken,
-    user: { id: user.id, name: user.name, email: user.email, role: user.role, tenantId: user.tenantId },
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      tenantId: user.tenantId,
+      tenantSlug: user.tenant.slug,
+    },
   });
 }
 
@@ -72,7 +95,14 @@ export async function refresh(req: Request, res: Response) {
   const accessToken = issueTokens(res, { userId: user.id, tenantId: user.tenantId, role: user.role });
   res.json({
     accessToken,
-    user: { id: user.id, name: user.name, email: user.email, role: user.role, tenantId: user.tenantId },
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      tenantId: user.tenantId,
+      tenantSlug: user.tenant.slug,
+    },
   });
 }
 

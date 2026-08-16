@@ -30,6 +30,45 @@ function dateRangeFor(range: ReportRange, anchor: Date): { from: Date; to: Date 
   return { from, to };
 }
 
+function dayKey(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Daily sales series for the last `days` days (including today), for the
+ * vendor-facing reports page's trend charts. Every day is pre-seeded so the
+ * series has no gaps even when a given day had no activity.
+ */
+export async function getSalesTrends(params: { tenantId: string; days: number }) {
+  const to = new Date();
+  const from = new Date(to);
+  from.setUTCDate(from.getUTCDate() - (params.days - 1));
+  from.setUTCHours(0, 0, 0, 0);
+
+  const orders = await prisma.order.findMany({
+    where: { tenantId: params.tenantId, status: "PAID", paidAt: { gte: from } },
+    select: { paidAt: true, total: true, items: { select: { quantity: true } } },
+  });
+
+  const buckets = new Map<string, { date: string; revenue: number; transactions: number; itemsSold: number }>();
+  for (let i = 0; i < params.days; i++) {
+    const d = new Date(from);
+    d.setUTCDate(from.getUTCDate() + i);
+    const key = dayKey(d);
+    buckets.set(key, { date: key, revenue: 0, transactions: 0, itemsSold: 0 });
+  }
+
+  for (const o of orders) {
+    const bucket = buckets.get(dayKey(o.paidAt!));
+    if (!bucket) continue;
+    bucket.revenue += Number(o.total);
+    bucket.transactions += 1;
+    bucket.itemsSold += o.items.reduce((sum, i) => sum + i.quantity, 0);
+  }
+
+  return Array.from(buckets.values());
+}
+
 export async function getSalesReport(params: { tenantId: string; range: ReportRange; date?: string }) {
   const anchor = params.date ? new Date(`${params.date}T00:00:00.000Z`) : new Date();
   if (Number.isNaN(anchor.getTime())) {

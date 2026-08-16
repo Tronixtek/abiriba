@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { api, ApiError } from "@/lib/apiClient";
-import type { CartItem, Order, Storefront } from "@/types";
+import { History, ArrowLeft } from "lucide-react";
+import { api, ApiError, resolveUploadUrl } from "@/lib/apiClient";
+import { trackOrder, getTrackedOrderIds } from "@/lib/storefrontOrders";
+import type { CartItem, Order, OrderStatus, PublicOrder, Storefront } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,23 +17,33 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { ImageLightbox } from "@/components/storefront/ImageLightbox";
 import { toast } from "sonner";
 
 function money(n: string | number) {
   return Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function statusVariant(status: OrderStatus): "default" | "secondary" | "destructive" {
+  if (status === "PAID") return "default";
+  if (status === "VOIDED") return "destructive";
+  return "secondary";
+}
+
 export function StorefrontPage() {
-  const { tenantId } = useParams<{ tenantId: string }>();
+  const { slug } = useParams<{ slug: string }>();
   const { data: storefront, isLoading, isError } = useQuery({
-    queryKey: ["public-storefront", tenantId],
-    queryFn: () => api.get<Storefront>(`/public/${tenantId}/storefront`),
+    queryKey: ["public-storefront", slug],
+    queryFn: () => api.get<Storefront>(`/public/${slug}/storefront`),
     retry: false,
   });
 
   const [cart, setCart] = useState<CartItem[]>([]);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [confirmedOrder, setConfirmedOrder] = useState<Order | null>(null);
+  const [lightboxProduct, setLightboxProduct] = useState<{ images: string[]; name: string } | null>(null);
+  const [search, setSearch] = useState("");
+  const [view, setView] = useState<"browse" | "orders">("browse");
 
   function addToCart(product: NonNullable<typeof storefront>["products"][number]) {
     setCart((prev) => {
@@ -74,39 +86,93 @@ export function StorefrontPage() {
   }
 
   if (confirmedOrder) {
-    return <OrderConfirmation businessName={storefront.businessName} order={confirmedOrder} />;
+    return (
+      <OrderConfirmation
+        businessName={storefront.businessName}
+        order={confirmedOrder}
+        onBackToShop={() => setConfirmedOrder(null)}
+        onViewOrders={() => {
+          setConfirmedOrder(null);
+          setView("orders");
+        }}
+      />
+    );
   }
+
+  if (view === "orders") {
+    return <MyOrdersView slug={slug!} businessName={storefront.businessName} onBack={() => setView("browse")} />;
+  }
+
+  const filteredProducts = storefront.products.filter((p) =>
+    p.name.toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
     <div className="mx-auto flex min-h-svh max-w-md flex-col gap-4 p-4 pb-28">
-      <div>
-        <h1 className="text-xl font-semibold">{storefront.businessName}</h1>
-        <p className="text-sm text-muted-foreground">Browse and add items to your order</p>
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <h1 className="text-xl font-semibold">{storefront.businessName}</h1>
+          <p className="text-sm text-muted-foreground">Browse and add items to your order</p>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => setView("orders")}>
+          <History className="size-4" />
+          My orders
+        </Button>
       </div>
+
+      {storefront.products.length > 0 && (
+        <Input
+          placeholder="Search products..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      )}
 
       <div className="flex flex-col gap-2">
         {storefront.products.length === 0 && (
           <p className="text-center text-sm text-muted-foreground">No products available right now.</p>
         )}
-        {storefront.products.map((p) => (
-          <Card key={p.id}>
-            <CardContent className="flex items-center justify-between gap-3 py-3">
-              <div>
-                <p className="font-medium">{p.name}</p>
-                {p.description && <p className="text-sm text-muted-foreground">{p.description}</p>}
-                <p className="text-sm text-muted-foreground">{money(p.price)}</p>
-                {!p.available && (
-                  <Badge variant="secondary" className="mt-1">
-                    Out of stock
-                  </Badge>
-                )}
-              </div>
-              <Button size="sm" disabled={!p.available} onClick={() => addToCart(p)}>
-                Add
-              </Button>
-            </CardContent>
-          </Card>
-        ))}
+        {storefront.products.length > 0 && filteredProducts.length === 0 && (
+          <p className="text-center text-sm text-muted-foreground">No products match "{search}".</p>
+        )}
+        {filteredProducts.map((p) => {
+          const imageUrls = p.images.map((img) => resolveUploadUrl(img)).filter((u): u is string => !!u);
+          return (
+            <Card key={p.id}>
+              <CardContent className="flex items-center justify-between gap-3 py-3">
+                <div className="flex items-center gap-3">
+                  {imageUrls.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setLightboxProduct({ images: imageUrls, name: p.name })}
+                      className="shrink-0"
+                      aria-label={`View photos of ${p.name}`}
+                    >
+                      <img
+                        src={imageUrls[0]}
+                        alt={p.name}
+                        className="size-14 rounded-md border object-cover"
+                      />
+                    </button>
+                  )}
+                  <div>
+                    <p className="font-medium">{p.name}</p>
+                    {p.description && <p className="text-sm text-muted-foreground">{p.description}</p>}
+                    <p className="text-sm text-muted-foreground">{money(p.price)}</p>
+                    {!p.available && (
+                      <Badge variant="secondary" className="mt-1">
+                        Out of stock
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+                <Button size="sm" disabled={!p.available} onClick={() => addToCart(p)}>
+                  Add
+                </Button>
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
 
       {cart.length > 0 && (
@@ -151,10 +217,23 @@ export function StorefrontPage() {
       <CustomerDetailsDialog
         open={detailsOpen}
         onOpenChange={setDetailsOpen}
-        tenantId={tenantId!}
+        slug={slug!}
         cart={cart}
-        onSubmitted={(order) => setConfirmedOrder(order)}
+        onSubmitted={(order) => {
+          trackOrder(slug!, order.id);
+          setConfirmedOrder(order);
+        }}
       />
+
+      {lightboxProduct && (
+        <ImageLightbox
+          images={lightboxProduct.images}
+          initialIndex={0}
+          productName={lightboxProduct.name}
+          open={!!lightboxProduct}
+          onOpenChange={(open) => !open && setLightboxProduct(null)}
+        />
+      )}
     </div>
   );
 }
@@ -170,13 +249,13 @@ function CenteredMessage({ children }: { children: React.ReactNode }) {
 function CustomerDetailsDialog({
   open,
   onOpenChange,
-  tenantId,
+  slug,
   cart,
   onSubmitted,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  tenantId: string;
+  slug: string;
   cart: CartItem[];
   onSubmitted: (order: Order) => void;
 }) {
@@ -186,7 +265,7 @@ function CustomerDetailsDialog({
 
   const submitOrder = useMutation({
     mutationFn: () =>
-      api.post<Order>(`/public/${tenantId}/orders`, {
+      api.post<Order>(`/public/${slug}/orders`, {
         customerName: name.trim(),
         customerEmail: email.trim() || undefined,
         customerPhone: phone.trim() || undefined,
@@ -244,7 +323,17 @@ function CustomerDetailsDialog({
   );
 }
 
-function OrderConfirmation({ businessName, order }: { businessName: string; order: Order }) {
+function OrderConfirmation({
+  businessName,
+  order,
+  onBackToShop,
+  onViewOrders,
+}: {
+  businessName: string;
+  order: Order;
+  onBackToShop: () => void;
+  onViewOrders: () => void;
+}) {
   return (
     <div className="mx-auto flex min-h-svh max-w-md flex-col items-center justify-center gap-4 p-4 text-center">
       <h1 className="text-xl font-semibold">Order submitted!</h1>
@@ -270,6 +359,89 @@ function OrderConfirmation({ businessName, order }: { businessName: string; orde
           </div>
         </CardContent>
       </Card>
+      <div className="flex w-full gap-2">
+        <Button variant="outline" className="flex-1" onClick={onBackToShop}>
+          Back to shop
+        </Button>
+        <Button className="flex-1" onClick={onViewOrders}>
+          My orders
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function MyOrdersView({
+  slug,
+  businessName,
+  onBack,
+}: {
+  slug: string;
+  businessName: string;
+  onBack: () => void;
+}) {
+  const orderIds = getTrackedOrderIds(slug);
+
+  const { data: orders, isLoading } = useQuery({
+    queryKey: ["public-my-orders", slug, orderIds.join(",")],
+    queryFn: async () => {
+      const results = await Promise.all(
+        orderIds.map((id) => api.get<PublicOrder>(`/public/${slug}/orders/${id}`).catch(() => null))
+      );
+      return results.filter((o): o is PublicOrder => o !== null);
+    },
+    enabled: orderIds.length > 0,
+  });
+
+  return (
+    <div className="mx-auto flex min-h-svh max-w-md flex-col gap-4 p-4">
+      <div className="flex items-center gap-2">
+        <Button variant="ghost" size="icon-sm" onClick={onBack} aria-label="Back to shop">
+          <ArrowLeft className="size-4" />
+        </Button>
+        <div>
+          <h1 className="text-xl font-semibold">My orders</h1>
+          <p className="text-sm text-muted-foreground">{businessName}</p>
+        </div>
+      </div>
+
+      {orderIds.length === 0 && (
+        <p className="mt-8 text-center text-sm text-muted-foreground">
+          You haven't placed any orders here yet — orders you place from this device will show up here.
+        </p>
+      )}
+
+      {isLoading && <p className="text-center text-sm text-muted-foreground">Loading...</p>}
+
+      <div className="flex flex-col gap-2">
+        {orders?.map((order) => (
+          <Card key={order.id}>
+            <CardContent className="flex flex-col gap-2 py-3">
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-sm text-muted-foreground">
+                  #{order.id.slice(-8).toUpperCase()}
+                </span>
+                <Badge variant={statusVariant(order.status)}>{order.status}</Badge>
+              </div>
+              {order.items.map((item, i) => (
+                <div key={i} className="flex justify-between text-sm">
+                  <span>
+                    {item.name} × {item.quantity}
+                  </span>
+                  <span>{money(item.lineTotal)}</span>
+                </div>
+              ))}
+              <div className="flex justify-between border-t pt-2 text-sm font-semibold">
+                <span>Total</span>
+                <span>{money(order.total)}</span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {new Date(order.createdAt).toLocaleString()}
+              </p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
     </div>
   );
 }

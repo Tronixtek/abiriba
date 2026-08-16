@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 import * as productsService from "./products.service.js";
 import { requireParam } from "../../utils/params.js";
+import { AppError } from "../../utils/AppError.js";
 
 export async function list(req: Request, res: Response) {
   res.json(await productsService.listProducts(req.user!.tenantId));
@@ -40,6 +41,29 @@ export async function update(req: Request, res: Response) {
     tenantId: req.user!.tenantId,
     productId: requireParam(req, "id"),
     ...body,
+  });
+  res.json(product);
+}
+
+export async function uploadImage(req: Request, res: Response) {
+  if (!req.file) {
+    throw new AppError(400, "No image file provided.");
+  }
+  const productId = requireParam(req, "id");
+  const url = `/uploads/products/${req.user!.tenantId}/${req.file.filename}`;
+  const product = await productsService.addProductImage({
+    tenantId: req.user!.tenantId,
+    productId,
+    url,
+  });
+  res.json(product);
+}
+
+export async function deleteImage(req: Request, res: Response) {
+  const product = await productsService.deleteProductImage({
+    tenantId: req.user!.tenantId,
+    productId: requireParam(req, "id"),
+    imageId: requireParam(req, "imageId"),
   });
   res.json(product);
 }

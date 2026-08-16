@@ -1,10 +1,22 @@
+import fs from "node:fs";
+import path from "node:path";
 import { Prisma } from "../../generated/prisma/client.js";
 import { prisma } from "../../db/prismaClient.js";
 import { AppError } from "../../utils/AppError.js";
 import { toDisplayPrice } from "../../utils/pricing.js";
+import { MAX_PRODUCT_IMAGES, UPLOADS_DIR } from "../../utils/upload.js";
+
+const IMAGES_ORDER = { images: { orderBy: { position: "asc" as const } } };
+
+function deleteImageFile(url: string) {
+  const filePath = path.join(UPLOADS_DIR, url.replace(/^\/uploads\//, ""));
+  fs.unlink(filePath, () => {
+    // best-effort cleanup — a missing/already-gone file is never an error here
+  });
+}
 
 export async function listProducts(tenantId: string) {
-  return prisma.product.findMany({ where: { tenantId }, orderBy: { name: "asc" } });
+  return prisma.product.findMany({ where: { tenantId }, orderBy: { name: "asc" }, include: IMAGES_ORDER });
 }
 
 export async function getLowStockProducts(tenantId: string) {
@@ -36,6 +48,7 @@ export async function createProduct(params: {
         quantity: params.quantity,
         lowStockThreshold: params.lowStockThreshold,
       },
+      include: IMAGES_ORDER,
     });
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
@@ -68,7 +81,39 @@ export async function updateProduct(params: {
   if (count === 0) {
     throw new AppError(404, "Product not found.");
   }
-  return prisma.product.findFirstOrThrow({ where: { id: params.productId, tenantId: params.tenantId } });
+  return prisma.product.findFirstOrThrow({
+    where: { id: params.productId, tenantId: params.tenantId },
+    include: IMAGES_ORDER,
+  });
+}
+
+export async function addProductImage(params: { tenantId: string; productId: string; url: string }) {
+  const product = await prisma.product.findFirst({ where: { id: params.productId, tenantId: params.tenantId } });
+  if (!product) {
+    throw new AppError(404, "Product not found.");
+  }
+  const count = await prisma.productImage.count({ where: { productId: params.productId } });
+  // Defense in depth — the upload middleware's fileFilter already gates this
+  // before the file is even written to disk; this covers any race.
+  if (count >= MAX_PRODUCT_IMAGES) {
+    throw new AppError(400, `A product can have at most ${MAX_PRODUCT_IMAGES} photos.`);
+  }
+  await prisma.productImage.create({
+    data: { tenantId: params.tenantId, productId: params.productId, url: params.url, position: count },
+  });
+  return prisma.product.findFirstOrThrow({ where: { id: params.productId }, include: IMAGES_ORDER });
+}
+
+export async function deleteProductImage(params: { tenantId: string; productId: string; imageId: string }) {
+  const image = await prisma.productImage.findFirst({
+    where: { id: params.imageId, productId: params.productId, tenantId: params.tenantId },
+  });
+  if (!image) {
+    throw new AppError(404, "Image not found.");
+  }
+  await prisma.productImage.delete({ where: { id: image.id } });
+  deleteImageFile(image.url);
+  return prisma.product.findFirstOrThrow({ where: { id: params.productId }, include: IMAGES_ORDER });
 }
 
 export async function adjustStock(params: {
