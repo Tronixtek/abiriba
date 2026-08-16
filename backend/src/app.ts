@@ -19,6 +19,11 @@ import { UPLOADS_DIR } from "./utils/upload.js";
 
 export const app = express();
 
+// Behind a reverse proxy (nginx) in production — trust exactly one hop so
+// express-rate-limit and req.ip see the real client address from
+// X-Forwarded-For rather than the proxy's own address.
+app.set("trust proxy", 1);
+
 app.use(cors({ origin: env.CORS_ORIGIN, credentials: true }));
 app.use(express.json());
 app.use(cookieParser());
