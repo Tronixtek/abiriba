@@ -3,7 +3,13 @@ import { useParams } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { History, ArrowLeft } from "lucide-react";
 import { api, ApiError, resolveUploadUrl } from "@/lib/apiClient";
-import { trackOrder, getTrackedOrderIds } from "@/lib/storefrontOrders";
+import {
+  trackOrder,
+  getTrackedOrderIds,
+  getCustomerDetails,
+  saveCustomerDetails,
+  clearCustomerDetails,
+} from "@/lib/storefrontOrders";
 import type { CartItem, Order, OrderStatus, PublicOrder, Storefront } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -260,9 +266,12 @@ function CustomerDetailsDialog({
   cart: CartItem[];
   onSubmitted: (order: Order) => void;
 }) {
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
+  // Prefilled from the last order placed on this device, so a returning
+  // customer only has to confirm rather than retype.
+  const saved = getCustomerDetails();
+  const [name, setName] = useState(saved?.name ?? "");
+  const [email, setEmail] = useState(saved?.email ?? "");
+  const [phone, setPhone] = useState(saved?.phone ?? "");
 
   const submitOrder = useMutation({
     mutationFn: () =>
@@ -273,6 +282,7 @@ function CustomerDetailsDialog({
         items: cart.map((item) => ({ productId: item.productId, quantity: item.quantity })),
       }),
     onSuccess: (order) => {
+      saveCustomerDetails({ name: name.trim(), email: email.trim(), phone: phone.trim() });
       onOpenChange(false);
       onSubmitted(order);
     },
@@ -313,6 +323,20 @@ function CustomerDetailsDialog({
             <Label htmlFor="customerPhone">Phone (optional)</Label>
             <Input id="customerPhone" value={phone} onChange={(e) => setPhone(e.target.value)} />
           </div>
+          {saved && (
+            <button
+              type="button"
+              onClick={() => {
+                clearCustomerDetails();
+                setName("");
+                setEmail("");
+                setPhone("");
+              }}
+              className="self-start text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground"
+            >
+              Not you? Clear saved details
+            </button>
+          )}
         </div>
         <DialogFooter>
           <Button onClick={handleSubmit} disabled={submitOrder.isPending}>

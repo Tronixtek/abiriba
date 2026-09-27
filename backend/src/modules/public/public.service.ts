@@ -5,7 +5,7 @@ import { AppError } from "../../utils/AppError.js";
 import { createOrder, payOrder } from "../orders/orders.service.js";
 import { haversineKm } from "../../utils/geo.js";
 import * as safeHaven from "../../utils/safeHavenClient.js";
-import { computeGrossedUpTotal, toKobo } from "../../utils/safeHavenFees.js";
+import { toKobo } from "../../utils/safeHavenFees.js";
 import { enqueueInstantPayout } from "../payouts/payouts.service.js";
 
 /**
@@ -303,7 +303,10 @@ export async function initializeSafeHavenPayment(params: { slug: string; orderId
     }
   }
 
-  const { totalCharged } = computeGrossedUpTotal(order.total);
+  // Nothing is added here: every product's displayPrice already covers the
+  // provider's collection fee, so the customer transfers exactly the total
+  // they saw in the cart.
+  const totalCharged = order.total;
   const [banks, virtualAccount] = await Promise.all([
     safeHaven.listBanks().catch(() => [] as safeHaven.Bank[]),
     safeHaven.createVirtualAccount({

@@ -2,6 +2,7 @@ import { Prisma } from "../../generated/prisma/client.js";
 import { prisma } from "../../db/prismaClient.js";
 import { AppError } from "../../utils/AppError.js";
 import { sendReceiptEmail } from "../../email/receiptService.js";
+import { platformFeeFor } from "../../utils/pricing.js";
 import type { OrderSource, PaymentMethod } from "../../generated/prisma/enums.js";
 
 export async function listOrders(tenantId: string) {
@@ -54,12 +55,13 @@ export async function createOrder(params: {
         `Not enough stock for "${product.name}" (have ${product.quantity}, requested ${item.quantity}).`
       );
     }
-    // unitPrice is the precomputed, fee-inclusive Product.displayPrice — the
-    // only price customers/staff-POS ever see. Vendor's true price is used
-    // only transiently below, to derive the order-level vendor/fee split.
+    // unitPrice is the precomputed, all-in Product.displayPrice — the only
+    // price customers/staff-POS ever see, and exactly what gets charged.
+    // The split below is internal bookkeeping only.
     const unitPrice = product.displayPrice;
     const lineTotal = unitPrice.times(item.quantity);
     const vendorLineTotal = product.price.times(item.quantity);
+    const platformLineTotal = platformFeeFor(product.price).times(item.quantity);
     return {
       tenantId: params.tenantId,
       productId: product.id,
@@ -68,14 +70,17 @@ export async function createOrder(params: {
       unitPrice,
       lineTotal,
       vendorLineTotal,
+      platformLineTotal,
     };
   });
 
   const total = lineItems.reduce((sum, item) => sum.plus(item.lineTotal), new Prisma.Decimal(0));
   const subtotal = lineItems.reduce((sum, item) => sum.plus(item.vendorLineTotal), new Prisma.Decimal(0));
+  const platformFee = lineItems.reduce((sum, item) => sum.plus(item.platformLineTotal), new Prisma.Decimal(0));
   // Derived, never recomputed via the rate a second time — guarantees
-  // subtotal + platformFee === total exactly, with no cross-rounding drift.
-  const platformFee = total.minus(subtotal);
+  // subtotal + platformFee + paymentAllowance === total exactly, with no
+  // cross-rounding drift.
+  const paymentAllowance = total.minus(subtotal).minus(platformFee);
 
   let customerName: string | null = null;
   if (params.customerId) {
@@ -95,9 +100,14 @@ export async function createOrder(params: {
       source: params.source ?? "STAFF",
       subtotal,
       platformFee,
+      paymentAllowance,
       total,
       createdById: params.createdById,
-      items: { create: lineItems.map(({ vendorLineTotal: _vendorLineTotal, ...item }) => item) },
+      items: {
+        create: lineItems.map(
+          ({ vendorLineTotal: _vendorLineTotal, platformLineTotal: _platformLineTotal, ...item }) => item
+        ),
+      },
     },
     include: { items: true },
   });

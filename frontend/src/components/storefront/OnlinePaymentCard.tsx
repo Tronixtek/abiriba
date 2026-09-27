@@ -126,11 +126,6 @@ export function OnlinePaymentCard({ slug, businessName, order }: { slug: string;
                 </div>
                 <DetailRow label="Amount" value={naira(details.totalCharged)} strong />
               </div>
-              {Number(details.totalCharged) > Number(order.total) && (
-                <p className="text-xs text-muted-foreground">
-                  Includes a {naira(Number(details.totalCharged) - Number(order.total))} bank transfer fee.
-                </p>
-              )}
               <CountdownTimer key={details.expiresAt} expiresAt={details.expiresAt} onExpire={handleExpire} />
               <Button variant="outline" onClick={() => payment.refetch()} disabled={payment.isFetching}>
                 {payment.isFetching ? "Checking..." : "I've sent it — check now"}

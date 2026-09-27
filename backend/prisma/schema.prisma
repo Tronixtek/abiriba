@@ -216,7 +216,12 @@ model Order {
   status       OrderStatus @default(OPEN)
   source       OrderSource @default(STAFF)
   subtotal     Decimal     @default(0) @db.Decimal(10, 2) // sum of vendor amounts owed — internal record, not shown to vendors
-  platformFee  Decimal     @default(0) @db.Decimal(10, 2) // total - subtotal — internal record, not shown to vendors
+  platformFee  Decimal     @default(0) @db.Decimal(10, 2) // the platform's own cut — internal record, not shown to vendors
+  // Built into displayPrice to cover the payment provider's collection fee,
+  // so nothing is ever added at checkout. Tracked apart from platformFee so
+  // platform revenue reporting isn't inflated by money that goes to the
+  // provider. subtotal + platformFee + paymentAllowance === total.
+  paymentAllowance Decimal @default(0) @db.Decimal(10, 2)
   total        Decimal     @default(0) @db.Decimal(10, 2) // sum of displayPrice x qty — the single inclusive number charged/shown to the customer
 
   createdById String?
