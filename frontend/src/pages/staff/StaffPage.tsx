@@ -4,6 +4,7 @@ import { useCreateStaffUser, useStaff } from "@/hooks/useStaff";
 import type { Role } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -126,9 +127,8 @@ function AddStaffDialog() {
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="password">Initial password</Label>
-            <Input
+            <PasswordInput
               id="password"
-              type="password"
               minLength={6}
               value={form.password}
               onChange={(e) => setForm({ ...form, password: e.target.value })}
