@@ -1,7 +1,12 @@
+import type { Prisma } from "../../generated/prisma/client.js";
 import { prisma } from "../../db/prismaClient.js";
+import { env } from "../../config/env.js";
 import { AppError } from "../../utils/AppError.js";
-import { createOrder } from "../orders/orders.service.js";
+import { createOrder, payOrder } from "../orders/orders.service.js";
 import { haversineKm } from "../../utils/geo.js";
+import * as safeHaven from "../../utils/safeHavenClient.js";
+import { computeGrossedUpTotal, toKobo } from "../../utils/safeHavenFees.js";
+import { enqueueInstantPayout } from "../payouts/payouts.service.js";
 
 /**
  * Public, unauthenticated storefront — deliberately exposes the minimum:
@@ -33,27 +38,11 @@ export async function getStorefront(slug: string) {
   };
 }
 
-/**
- * Lets a customer revisit an order they placed (e.g. to check whether staff
- * have marked it paid yet) using nothing but the unguessable order id — no
- * customer account exists to authenticate against. Deliberately returns a
- * minimal, public-safe shape: never the vendor's subtotal/platformFee split,
- * staff identities, or void reasons.
- */
-export async function getPublicOrder(params: { slug: string; orderId: string }) {
-  const tenant = await prisma.tenant.findUnique({ where: { slug: params.slug } });
-  if (!tenant) {
-    throw new AppError(404, "Store not found.");
-  }
+type OrderWithItems = Prisma.OrderGetPayload<{ include: { items: true } }>;
 
-  const order = await prisma.order.findFirst({
-    where: { id: params.orderId, tenantId: tenant.id },
-    include: { items: true },
-  });
-  if (!order) {
-    throw new AppError(404, "Order not found.");
-  }
-
+// Minimal, public-safe shape: never the vendor's subtotal/platformFee split,
+// staff identities, or void reasons.
+function toPublicOrder(order: OrderWithItems) {
   return {
     id: order.id,
     status: order.status,
@@ -66,7 +55,38 @@ export async function getPublicOrder(params: { slug: string; orderId: string }) 
     })),
     createdAt: order.createdAt,
     paidAt: order.paidAt,
+    totalCharged: order.totalCharged,
+    safeHavenAccountNumber: order.safeHavenAccountNumber,
+    safeHavenBankName: order.safeHavenBankName,
+    safeHavenExpiresAt: order.safeHavenExpiresAt,
   };
+}
+
+async function findTenantBySlug(slug: string) {
+  const tenant = await prisma.tenant.findUnique({ where: { slug } });
+  if (!tenant) {
+    throw new AppError(404, "Store not found.");
+  }
+  return tenant;
+}
+
+/**
+ * Lets a customer revisit an order they placed (e.g. to check whether it's
+ * been paid yet) using nothing but the unguessable order id — no customer
+ * account exists to authenticate against.
+ */
+export async function getPublicOrder(params: { slug: string; orderId: string }) {
+  const tenant = await findTenantBySlug(params.slug);
+
+  const order = await prisma.order.findFirst({
+    where: { id: params.orderId, tenantId: tenant.id },
+    include: { items: true },
+  });
+  if (!order) {
+    throw new AppError(404, "Order not found.");
+  }
+
+  return toPublicOrder(order);
 }
 
 /**
@@ -195,10 +215,10 @@ export async function searchMarketplace(params: { query: string; city?: string; 
 }
 
 /**
- * Creates a customer-submitted order awaiting in-person payment — same
- * OPEN status a staff-built cart would get, just tagged source=CUSTOMER_QR
- * with no createdById (no staff user is involved). Staff confirm payment
- * later via the existing orders.service.ts#payOrder, unchanged.
+ * Creates a customer-submitted order awaiting payment — same OPEN status a
+ * staff-built cart would get, just tagged source=CUSTOMER_QR with no
+ * createdById (no staff user is involved). It's paid either online via
+ * initializeSafeHavenPayment below, or in person via orders.service.ts#payOrder.
  */
 export async function createPublicOrder(params: {
   slug: string;
@@ -227,4 +247,159 @@ export async function createPublicOrder(params: {
     source: "CUSTOMER_QR",
     items: params.items,
   });
+}
+
+const PAYMENT_WINDOW_SECONDS = 30 * 60;
+
+/**
+ * Gives the customer a SafeHaven virtual account to transfer this order's
+ * total into. The amount is grossed up so SafeHaven's own collection fee is
+ * covered by the customer, not the vendor or platform. Reuses a still-valid
+ * virtual account instead of minting a second one for the same order.
+ */
+export async function initializeSafeHavenPayment(params: { slug: string; orderId: string }) {
+  const tenant = await findTenantBySlug(params.slug);
+  const order = await prisma.order.findFirst({
+    where: { id: params.orderId, tenantId: tenant.id },
+    include: { items: true },
+  });
+  if (!order) {
+    throw new AppError(404, "Order not found.");
+  }
+  // In-person (staff-built) orders are paid at the till, not through this flow.
+  if (order.source !== "CUSTOMER_QR") {
+    throw new AppError(400, "Online payment is only available for orders placed from the storefront.");
+  }
+  if (order.status !== "OPEN") {
+    throw new AppError(400, "This order isn't awaiting payment.");
+  }
+
+  if (
+    order.safeHavenVirtualAccountId &&
+    order.safeHavenAccountNumber &&
+    order.totalCharged &&
+    order.safeHavenExpiresAt &&
+    order.safeHavenExpiresAt.getTime() > Date.now() + 60_000
+  ) {
+    return {
+      accountNumber: order.safeHavenAccountNumber,
+      accountName: null,
+      bankName: order.safeHavenBankName ?? "Safe Haven MFB",
+      totalCharged: order.totalCharged,
+      expiresAt: order.safeHavenExpiresAt,
+    };
+  }
+
+  // Stock is only decremented once payment is confirmed, so check it now
+  // rather than let a customer pay for something that has since sold out.
+  const products = await prisma.product.findMany({
+    where: { tenantId: tenant.id, id: { in: order.items.map((i) => i.productId) } },
+  });
+  const productMap = new Map(products.map((p) => [p.id, p]));
+  for (const item of order.items) {
+    const product = productMap.get(item.productId);
+    if (!product || product.quantity < item.quantity) {
+      throw new AppError(409, `Sorry, "${item.name}" has just sold out. Please speak to a staff member.`);
+    }
+  }
+
+  const { totalCharged } = computeGrossedUpTotal(order.total);
+  const [banks, virtualAccount] = await Promise.all([
+    safeHaven.listBanks().catch(() => [] as safeHaven.Bank[]),
+    safeHaven.createVirtualAccount({
+      amount: Number(totalCharged.toFixed(2)),
+      callbackUrl: `${env.BACKEND_PUBLIC_URL}/public/${encodeURIComponent(params.slug)}/orders/${order.id}/safehaven-webhook`,
+      validForSeconds: PAYMENT_WINDOW_SECONDS,
+    }),
+  ]);
+
+  const bankName = banks.find((b) => b.code === virtualAccount.bankCode)?.name ?? "Safe Haven MFB";
+  const providerExpiry = virtualAccount.expiryDate ? new Date(virtualAccount.expiryDate) : null;
+  const expiresAt =
+    providerExpiry && !Number.isNaN(providerExpiry.getTime())
+      ? providerExpiry
+      : new Date(Date.now() + PAYMENT_WINDOW_SECONDS * 1000);
+
+  const updated = await prisma.order.update({
+    where: { id: order.id },
+    data: {
+      safeHavenVirtualAccountId: virtualAccount._id,
+      safeHavenAccountNumber: virtualAccount.accountNumber,
+      safeHavenBankName: bankName,
+      safeHavenPaymentReference: `abiriba_ord_${order.id}_${Date.now()}`,
+      safeHavenExpiresAt: expiresAt,
+      totalCharged,
+    },
+  });
+
+  return {
+    accountNumber: virtualAccount.accountNumber,
+    accountName: virtualAccount.accountName ?? null,
+    bankName,
+    totalCharged: updated.totalCharged!,
+    expiresAt,
+  };
+}
+
+/**
+ * Idempotent — called by the webhook, the customer's "check now" button, and
+ * a periodic poll, possibly concurrently. Never trusts a webhook's claim:
+ * payment is independently confirmed via an authenticated SafeHaven call on
+ * our own stored virtual account id before anything is marked paid.
+ */
+export async function verifyAndApplySafeHavenPayment(params: { slug: string; orderId: string }) {
+  const tenant = await findTenantBySlug(params.slug);
+  const order = await prisma.order.findFirst({
+    where: { id: params.orderId, tenantId: tenant.id },
+    include: { items: true },
+  });
+  if (!order) {
+    throw new AppError(404, "Order not found.");
+  }
+  if (order.status !== "OPEN" || !order.safeHavenVirtualAccountId || !order.totalCharged) {
+    return toPublicOrder(order);
+  }
+
+  // Checked regardless of expiry: a transfer that landed just before the
+  // window closed still counts, even if this check runs after it.
+  const transaction = await safeHaven.getVirtualAccountTransaction(order.safeHavenVirtualAccountId);
+  if (!transaction || transaction.status !== "Completed") {
+    return toPublicOrder(order);
+  }
+
+  // Math.round: transaction.amount is a kobo-precise decimal, and raw float
+  // multiplication can drift (e.g. 202.02 * 100 = 20201.999...).
+  if (Math.round(transaction.amount * 100) !== toKobo(order.totalCharged)) {
+    console.error("SafeHaven payment amount mismatch", order.id, transaction.amount, order.totalCharged.toString());
+    throw new AppError(400, "The amount received doesn't match this order. Please speak to a staff member.");
+  }
+
+  let applied = false;
+  try {
+    // Reuses the exact same stock-decrement / Payment / receipt transaction a
+    // staff "mark paid" goes through. Payment.orderId is unique, so a racing
+    // second caller's transaction fails and rolls back rather than double-applying.
+    await payOrder({ tenantId: tenant.id, orderId: order.id, method: "ONLINE" });
+    applied = true;
+  } catch (err) {
+    const current = await prisma.order.findUniqueOrThrow({ where: { id: order.id }, select: { status: true } });
+    if (current.status !== "PAID") {
+      // Money has arrived but the order couldn't be completed (e.g. an item
+      // sold out in the meantime) — needs a human to fulfil or refund.
+      console.error("SafeHaven payment received but order could not be marked paid", order.id, err);
+      throw new AppError(
+        409,
+        "Your payment was received, but we couldn't confirm your order automatically. Please show this screen to a staff member."
+      );
+    }
+  }
+
+  if (applied && tenant.settlementMode === "INSTANT") {
+    enqueueInstantPayout(order.id).catch((err) => {
+      console.error("Failed to enqueue instant payout", order.id, err);
+    });
+  }
+
+  const updated = await prisma.order.findUniqueOrThrow({ where: { id: order.id }, include: { items: true } });
+  return toPublicOrder(updated);
 }

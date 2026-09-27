@@ -17,6 +17,7 @@ import { MarketplacePage as MarketplaceSettingsPage } from "@/pages/settings/Mar
 import { AiChatPage } from "@/pages/ai/AiChatPage";
 import { StorefrontPage } from "@/pages/storefront/StorefrontPage";
 import { MarketplacePage } from "@/pages/marketplace/MarketplacePage";
+import { PayoutsPage } from "@/pages/settings/PayoutsPage";
 import { LandingPage } from "@/pages/marketing/LandingPage";
 import { TermsPage } from "@/pages/marketing/TermsPage";
 import { PrivacyPage } from "@/pages/marketing/PrivacyPage";
@@ -106,6 +107,14 @@ function App() {
               element={
                 <RequireRole roles={["OWNER", "MANAGER"]}>
                   <MarketplaceSettingsPage />
+                </RequireRole>
+              }
+            />
+            <Route
+              path="payouts"
+              element={
+                <RequireRole roles={["OWNER"]}>
+                  <PayoutsPage />
                 </RequireRole>
               }
             />

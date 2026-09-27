@@ -19,6 +19,14 @@ const envSchema = z.object({
   SMTP_PASS: z.string().optional(),
   SMTP_FROM: z.string().default("Shop Record <no-reply@example.com>"),
   GOOGLE_API_KEY: z.string().min(1),
+  SAFE_HAVEN_BASE_URL: z.string().url().default("https://api.safehavenmfb.com"),
+  SAFE_HAVEN_CLIENT_ID: z.string().min(1),
+  SAFE_HAVEN_CLIENT_ASSERTION: z.string().min(1),
+  SAFE_HAVEN_PLATFORM_ACCOUNT_NUMBER: z.string().min(1),
+  SAFE_HAVEN_PLATFORM_BANK_CODE: z.string().min(1),
+  // Public base URL of this API — SafeHaven's webhook callbackUrl is built
+  // from it, and must be https.
+  BACKEND_PUBLIC_URL: z.string().url(),
 });
 
 export const env = envSchema.parse(process.env);

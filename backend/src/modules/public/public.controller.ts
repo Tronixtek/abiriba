@@ -64,3 +64,36 @@ export async function createOrder(req: Request, res: Response) {
   });
   res.status(201).json(order);
 }
+
+export async function initializePayment(req: Request, res: Response) {
+  res.json(
+    await publicService.initializeSafeHavenPayment({
+      slug: requireParam(req, "slug"),
+      orderId: requireParam(req, "orderId"),
+    })
+  );
+}
+
+export async function verifyPayment(req: Request, res: Response) {
+  res.json(
+    await publicService.verifyAndApplySafeHavenPayment({
+      slug: requireParam(req, "slug"),
+      orderId: requireParam(req, "orderId"),
+    })
+  );
+}
+
+// SafeHaven's webhook payload signing is undocumented, so the body is never
+// trusted — this is only a "check now" hint, and payment is independently
+// verified via an authenticated API call before anything is marked paid.
+// Ack first so SafeHaven doesn't retry because of our own latency.
+export function safeHavenWebhook(req: Request, res: Response) {
+  res.status(200).json({ received: true });
+
+  const { slug, orderId } = req.params;
+  if (typeof slug !== "string" || typeof orderId !== "string") return;
+
+  publicService.verifyAndApplySafeHavenPayment({ slug, orderId }).catch((err) => {
+    console.error("SafeHaven webhook check failed", orderId, err);
+  });
+}

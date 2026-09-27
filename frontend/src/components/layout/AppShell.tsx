@@ -26,6 +26,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/app/staff", label: "Staff", roles: ["OWNER", "MANAGER"] },
   { to: "/app/store-qr", label: "Store QR", roles: ["OWNER", "MANAGER"] },
   { to: "/app/marketplace-settings", label: "Marketplace", roles: ["OWNER", "MANAGER"] },
+  { to: "/app/payouts", label: "Payouts", roles: ["OWNER"] },
 ];
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {

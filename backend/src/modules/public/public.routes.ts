@@ -21,6 +21,16 @@ const marketplaceLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Covers starting a payment plus the status check the customer's screen
+// makes roughly every 10s while a payment window is open, so it has to be
+// roomier than order creation.
+const paymentLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 150,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 publicRouter.get("/stats", publicController.platformStats);
 // Fixed literal paths must be registered before the "/:slug/..." routes
 // below, so Express doesn't try to match "marketplace" as a slug.
@@ -29,3 +39,7 @@ publicRouter.get("/marketplace/search", marketplaceLimiter, publicController.mar
 publicRouter.get("/:slug/storefront", publicController.storefront);
 publicRouter.get("/:slug/orders/:orderId", publicController.getOrder);
 publicRouter.post("/:slug/orders", createOrderLimiter, publicController.createOrder);
+publicRouter.post("/:slug/orders/:orderId/pay", paymentLimiter, publicController.initializePayment);
+publicRouter.post("/:slug/orders/:orderId/verify-payment", paymentLimiter, publicController.verifyPayment);
+// Called by SafeHaven itself — never rate-limited.
+publicRouter.post("/:slug/orders/:orderId/safehaven-webhook", publicController.safeHavenWebhook);

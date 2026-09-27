@@ -156,7 +156,7 @@ export function AdminTenantDetailPage() {
                   <TableCell>{s.product.name}</TableCell>
                   <TableCell>{s.reason}</TableCell>
                   <TableCell className="text-right">{s.delta > 0 ? `+${s.delta}` : s.delta}</TableCell>
-                  <TableCell className="text-muted-foreground">{s.user.name}</TableCell>
+                  <TableCell className="text-muted-foreground">{s.user?.name ?? "Online payment"}</TableCell>
                   <TableCell className="text-muted-foreground">
                     {new Date(s.createdAt).toLocaleString()}
                   </TableCell>

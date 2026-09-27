@@ -13,6 +13,7 @@ import { auditRouter } from "./modules/audit/audit.routes.js";
 import { publicRouter } from "./modules/public/public.routes.js";
 import { aiRouter } from "./modules/ai/ai.routes.js";
 import { tenantRouter } from "./modules/tenant/tenant.routes.js";
+import { payoutsRouter } from "./modules/payouts/payouts.routes.js";
 import { adminAuthRouter } from "./modules/admin/auth/admin-auth.routes.js";
 import { adminRouter } from "./modules/admin/admin.routes.js";
 import { UPLOADS_DIR } from "./utils/upload.js";
@@ -44,6 +45,7 @@ app.use("/audit", auditRouter);
 app.use("/public", publicRouter);
 app.use("/ai", aiRouter);
 app.use("/tenant", tenantRouter);
+app.use("/payouts", payoutsRouter);
 app.use("/admin/auth", adminAuthRouter);
 app.use("/admin", adminRouter);
 

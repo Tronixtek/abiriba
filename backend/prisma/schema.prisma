@@ -28,6 +28,19 @@ enum PaymentMethod {
   CASH
   CARD
   TRANSFER
+  ONLINE
+}
+
+enum SettlementMode {
+  INSTANT
+  END_OF_DAY
+}
+
+enum PayoutStatus {
+  PENDING
+  PROCESSING
+  SUCCESS
+  FAILED
 }
 
 enum StockAdjustmentReason {
@@ -97,12 +110,22 @@ model Tenant {
   latitude           Decimal?  @db.Decimal(9, 6)
   longitude          Decimal?  @db.Decimal(9, 6)
 
+  // Where a vendor's share of online payments gets paid out to. Resolved via
+  // SafeHaven name-enquiry at save time (settlementAccountName) so a typo'd
+  // account number is caught immediately rather than discovered when a
+  // payout later fails against a real bank.
+  settlementMode          SettlementMode @default(END_OF_DAY)
+  settlementBankCode      String?
+  settlementAccountNumber String?
+  settlementAccountName   String?
+
   users            User[]
   products         Product[]
   customers        Customer[]
   orders           Order[]
   stockAdjustments StockAdjustment[]
   aiChatMessages   AiChatMessage[]
+  payouts          Payout[]
 
   @@index([marketplaceEnabled])
   @@index([city])
@@ -207,6 +230,20 @@ model Order {
 
   receiptStatus ReceiptStatus @default(NOT_APPLICABLE)
 
+  // SafeHaven online-payment fields — all nullable, only ever set once a
+  // customer starts a "pay online" attempt on a CUSTOMER_QR order. No
+  // separate stored payment-status: the order just stays OPEN while awaiting
+  // a transfer, same as it does today awaiting in-person payment.
+  safeHavenVirtualAccountId String?
+  safeHavenAccountNumber    String?
+  safeHavenBankName         String?
+  safeHavenPaymentReference String?   @unique
+  safeHavenExpiresAt        DateTime?
+  totalCharged              Decimal?  @db.Decimal(10, 2) // total grossed up for SafeHaven's own inward fee — what the customer actually transfers, always >= total
+
+  payoutId String?
+  payout   Payout? @relation(fields: [payoutId], references: [id])
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -217,6 +254,7 @@ model Order {
   @@index([tenantId])
   @@index([tenantId, status])
   @@index([tenantId, paidAt])
+  @@index([payoutId])
 }
 
 model OrderItem {
@@ -243,8 +281,8 @@ model Payment {
   order          Order         @relation(fields: [orderId], references: [id])
   method         PaymentMethod
   amount         Decimal       @db.Decimal(10, 2)
-  markedPaidById String
-  markedPaidBy   User          @relation(fields: [markedPaidById], references: [id])
+  markedPaidById String? // null for ONLINE payments — a customer paid directly, no staff member marked it
+  markedPaidBy   User?         @relation(fields: [markedPaidById], references: [id])
   createdAt      DateTime      @default(now())
 
   @@index([tenantId])
@@ -256,8 +294,8 @@ model StockAdjustment {
   tenant    Tenant                @relation(fields: [tenantId], references: [id])
   productId String
   product   Product               @relation(fields: [productId], references: [id])
-  userId    String
-  user      User                  @relation(fields: [userId], references: [id])
+  userId    String? // null for SALE adjustments from an ONLINE payment — the customer paid directly, no staff actor
+  user      User?                 @relation(fields: [userId], references: [id])
   delta     Int
   reason    StockAdjustmentReason
   orderId   String?
@@ -292,4 +330,37 @@ model AiChatMessage {
 
   @@index([tenantId])
   @@index([tenantId, createdAt])
+}
+
+model Payout {
+  id       String       @id @default(cuid())
+  tenantId String
+  tenant   Tenant       @relation(fields: [tenantId], references: [id])
+  status   PayoutStatus @default(PENDING)
+
+  amount Decimal @db.Decimal(10, 2) // gross vendor share, set at creation — sum of subtotal across included orders, unchanged by execution
+
+  // Both set at execution time only. feeAmount: instant = base outward fee +
+  // 7.5% VAT + flat margin; end_of_day = base outward fee only (no VAT, no
+  // margin) — recorded for cost-tracking but never deducted.
+  // transferredAmount: what actually left the platform account — amount
+  // minus feeAmount when instant, or the unchanged full amount when
+  // end-of-day (the platform absorbs feeAmount itself). Kept as its own
+  // field rather than derived, since the amount-minus-fee formula only
+  // applies to one of the two modes.
+  feeAmount         Decimal  @default(0) @db.Decimal(10, 2)
+  transferredAmount Decimal? @db.Decimal(10, 2)
+
+  nameEnquiryReference String?
+  transferReference    String? @unique
+  failureReason        String?
+  retryCount           Int     @default(0)
+
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  orders Order[]
+
+  @@index([tenantId])
+  @@index([status])
 }

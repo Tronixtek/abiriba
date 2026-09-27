@@ -106,7 +106,8 @@ export async function createOrder(params: {
 export async function payOrder(params: {
   tenantId: string;
   orderId: string;
-  userId: string;
+  // Omitted for ONLINE payments — the customer paid directly, no staff actor.
+  userId?: string;
   method: PaymentMethod;
 }) {
   const order = await prisma.$transaction(async (tx) => {

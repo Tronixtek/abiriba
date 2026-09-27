@@ -4,7 +4,11 @@ export type OrderStatus = "OPEN" | "PAID" | "VOIDED";
 
 export type OrderSource = "STAFF" | "CUSTOMER_QR";
 
-export type PaymentMethod = "CASH" | "CARD" | "TRANSFER";
+export type PaymentMethod = "CASH" | "CARD" | "TRANSFER" | "ONLINE";
+
+export type SettlementMode = "INSTANT" | "END_OF_DAY";
+
+export type PayoutStatus = "PENDING" | "PROCESSING" | "SUCCESS" | "FAILED";
 
 export type StockAdjustmentReason =
   | "SALE"
@@ -81,17 +85,22 @@ export interface Order {
   createdAt: string;
   updatedAt: string;
   paidAt?: string | null;
-  payment?: { method: PaymentMethod; amount: string; markedPaidById: string } | null;
+  // markedPaidById is null for ONLINE payments — the customer paid directly.
+  payment?: { method: PaymentMethod; amount: string; markedPaidById: string | null } | null;
   voidedAt?: string | null;
   voidedById?: string | null;
   voidReason?: string | null;
   receiptStatus?: ReceiptStatus;
+  totalCharged?: string | null;
+  safeHavenAccountNumber?: string | null;
+  safeHavenBankName?: string | null;
+  safeHavenExpiresAt?: string | null;
 }
 
 export interface StockAdjustment {
   id: string;
   productId: string;
-  userId: string;
+  userId: string | null;
   delta: number;
   reason: StockAdjustmentReason;
   orderId: string | null;
@@ -146,6 +155,44 @@ export interface PublicOrder {
   items: { name: string; quantity: number; unitPrice: string; lineTotal: string }[];
   createdAt: string;
   paidAt?: string | null;
+  totalCharged?: string | null;
+  safeHavenAccountNumber?: string | null;
+  safeHavenBankName?: string | null;
+  safeHavenExpiresAt?: string | null;
+}
+
+// What a customer transfers to for an online (SafeHaven) payment.
+// totalCharged is the order total grossed up to cover SafeHaven's own fee.
+export interface SafeHavenPaymentDetails {
+  accountNumber: string;
+  accountName: string | null;
+  bankName: string;
+  totalCharged: string;
+  expiresAt: string;
+}
+
+export interface Bank {
+  code: string;
+  name: string;
+}
+
+export interface TenantSettlementSettings {
+  settlementMode: SettlementMode;
+  settlementBankCode: string | null;
+  settlementAccountNumber: string | null;
+  settlementAccountName: string | null;
+}
+
+export interface Payout {
+  id: string;
+  status: PayoutStatus;
+  amount: string;
+  feeAmount: string;
+  transferredAmount: string | null;
+  failureReason: string | null;
+  createdAt: string;
+  completedAt: string | null;
+  _count: { orders: number };
 }
 
 export interface TenantMarketplaceSettings {
@@ -249,5 +296,6 @@ export interface AdminTenantDetail {
   vendorPayouts: number;
   platformRevenue: number;
   recentOrders: Order[];
-  recentStockAdjustments: (StockAdjustment & { user: { name: string } })[];
+  // user is null for SALE adjustments from an online payment (no staff actor).
+  recentStockAdjustments: (StockAdjustment & { user: { name: string } | null })[];
 }

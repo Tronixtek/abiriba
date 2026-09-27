@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { ImageLightbox } from "@/components/storefront/ImageLightbox";
+import { OnlinePaymentCard } from "@/components/storefront/OnlinePaymentCard";
 import { toast } from "sonner";
 
 function money(n: string | number) {
@@ -334,12 +335,11 @@ function OrderConfirmation({
   onBackToShop: () => void;
   onViewOrders: () => void;
 }) {
+  const { slug } = useParams<{ slug: string }>();
+
   return (
     <div className="mx-auto flex min-h-svh max-w-md flex-col items-center justify-center gap-4 p-4 text-center">
       <h1 className="text-xl font-semibold">Order submitted!</h1>
-      <p className="text-muted-foreground">
-        Show this screen to a staff member at {businessName} to pay.
-      </p>
       <Card className="w-full">
         <CardContent className="flex flex-col gap-2 py-4 text-left">
           <p className="text-sm text-muted-foreground">
@@ -359,6 +359,7 @@ function OrderConfirmation({
           </div>
         </CardContent>
       </Card>
+      <OnlinePaymentCard slug={slug!} businessName={businessName} order={order} />
       <div className="flex w-full gap-2">
         <Button variant="outline" className="flex-1" onClick={onBackToShop}>
           Back to shop
